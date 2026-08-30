@@ -1,6 +1,10 @@
 <div align="center">
 
 # 💰 FinOps360
+<img width="1397" height="786" alt="Screenshot 2026-08-30 212639" src="https://github.com/user-attachments/assets/aed1d73d-e3fb-49fe-a8b6-c298621c6add" />
+<img width="1101" height="802" alt="Screenshot 2026-08-30 212713" src="https://github.com/user-attachments/assets/1a48fdaf-f6c2-4db4-a92a-11a71174f8cf" />
+<img width="1506" height="791" alt="Screenshot 2026-08-30 212918" src="https://github.com/user-attachments/assets/9baecdc8-bcac-4544-a6e4-aa54e3219b56" />
+
 
 ### 📊 Finance & Operations Analytics Dashboard
 
