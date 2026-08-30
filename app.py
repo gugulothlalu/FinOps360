@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import date
+from pathlib import Path
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -13,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-DATABASE = "finops.db"
+DATABASE = Path(__file__).resolve().parent / "finops.db"
 
 
 # --------------------------------------------------
@@ -792,8 +793,11 @@ elif page == "📈 Reports":
     # KPI CALCULATIONS
     # ----------------------------------------------
 
+    # Expense KPIs respect the selected filters.
     total_expenses = filtered_expenses["amount"].sum()
 
+    # Invoices currently do not contain category/department fields, so
+    # invoice KPIs remain global rather than pretending to be filtered.
     pending_payments = invoices[
         invoices["status"] == "Pending"
     ]["amount"].sum()
@@ -802,7 +806,17 @@ elif page == "📈 Reports":
         invoices["status"] == "Paid"
     ]["amount"].sum()
 
-    total_budget = budgets["budget_amount"].sum()
+    # Budgets are category-level only. When a category is selected, use
+    # that category's budget; department selection cannot change budget
+    # scope because the budgets table has no department column.
+    budget_scope = budgets.copy()
+
+    if selected_category != "All":
+        budget_scope = budget_scope[
+            budget_scope["category"] == selected_category
+        ]
+
+    total_budget = budget_scope["budget_amount"].sum()
 
     budget_utilization = (
         total_expenses / total_budget * 100
@@ -826,13 +840,13 @@ elif page == "📈 Reports":
 
     with col2:
         st.metric(
-            "Pending Payments",
+            "Pending Payments (All Invoices)",
             f"₹{pending_payments:,.0f}"
         )
 
     with col3:
         st.metric(
-            "Paid Invoices",
+            "Paid Invoices (All Invoices)",
             f"₹{paid_invoices:,.0f}"
         )
 
@@ -840,6 +854,11 @@ elif page == "📈 Reports":
         st.metric(
             "Budget Utilization",
             f"{budget_utilization:.1f}%"
+        )
+
+    if selected_category != "All" or selected_department != "All":
+        st.caption(
+            "ℹ️ Expense analysis follows the selected filters. Invoice metrics remain global because invoices are not mapped to category/department; budget utilization uses the selected category's budget when a category is chosen."
         )
 
     # ----------------------------------------------
