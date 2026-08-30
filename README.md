@@ -8,11 +8,17 @@
 
 <br>
 
-![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)
-![Streamlit](https://img.shields.io/badge/Streamlit-App-red?style=for-the-badge&logo=streamlit)
-![Pandas](https://img.shields.io/badge/Pandas-Analytics-150458?style=for-the-badge&logo=pandas)
-![SQL](https://img.shields.io/badge/SQL-Database-orange?style=for-the-badge&logo=sqlite)
-![Plotly](https://img.shields.io/badge/Plotly-Visualization-3F4F75?style=for-the-badge&logo=plotly)
+[![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-App-red?style=for-the-badge&logo=streamlit)](https://streamlit.io/)
+[![Pandas](https://img.shields.io/badge/Pandas-Analytics-150458?style=for-the-badge&logo=pandas)](https://pandas.pydata.org/)
+[![SQL](https://img.shields.io/badge/SQL-Database-orange?style=for-the-badge&logo=sqlite)](https://www.sqlite.org/)
+[![Plotly](https://img.shields.io/badge/Plotly-Visualization-3F4F75?style=for-the-badge&logo=plotly)](https://plotly.com/)
+
+<br><br>
+
+<a href="https://finops360-vewolvgwne2yd6ssxhbepq.streamlit.app/">
+<img src="https://img.shields.io/badge/🚀_LIVE_DEMO-Open_App-success?style=for-the-badge" />
+</a>
 
 </div>
 
@@ -20,28 +26,41 @@
 
 ## 🚀 About the Project
 
-**FinOps360** is an interactive Finance & Operations Analytics Dashboard designed to help organizations monitor financial activity and make data-driven decisions.
+**FinOps360** is an interactive Finance & Operations Analytics Dashboard built to help monitor financial activity and support data-driven decision making.
 
-The application brings together **expense tracking, invoice management, vendor management, budget monitoring, spending insights, and financial health analysis** in one dashboard.
+The application brings together:
+
+- 💰 Expense tracking
+- 🧾 Invoice management
+- 🏢 Vendor management
+- 📊 Budget monitoring
+- 📈 Spending insights
+- ⚠️ Financial risk analysis
+- 💼 Financial health monitoring
+
+All these capabilities are integrated into a single dashboard.
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
 ### 📊 Dashboard
+
 - Total expense overview
-- Pending invoice tracking
 - Paid invoice tracking
+- Pending invoice tracking
 - Budget utilization monitoring
 - Expense analytics
 
 ### 💳 Expense Management
+
 - Record and manage expenses
 - Category-wise spending analysis
 - Department-wise spending analysis
-- Expense data visualization
+- Interactive expense visualizations
 
 ### 🧾 Invoice Management
+
 - Create invoices
 - Track invoice amounts
 - Monitor payment status
@@ -49,158 +68,38 @@ The application brings together **expense tracking, invoice management, vendor m
 - Identify overdue invoices
 
 ### 🏢 Vendor Management
+
 - Register vendors
 - Maintain vendor information
 - View registered vendors
 
 ### 📈 Reports & Insights
+
 - Expense analysis
 - Budget monitoring
-- Smart invoice alerts
+- Budget vs Actual analysis
+- Spending insights
 - High-spending detection
+- Smart invoice alerts
 - Financial health summary
 - Risk-level analysis
-- Downloadable expense report
+- Downloadable expense reports
 
 ---
 
 ## 🧠 Financial Intelligence
 
-FinOps360 converts raw financial data into actionable insights.
+FinOps360 transforms financial data into actionable insights.
 
 ```text
 Financial Data
       ↓
 Expense & Invoice Tracking
       ↓
-Data Analysis
+Data Processing & Analysis
       ↓
 Spending Insights
       ↓
 Risk Detection
       ↓
 Financial Decision Making
-```
-
-### ⚠️ Example
-
-If budget utilization becomes high, the dashboard automatically highlights the financial risk and provides a recommendation to monitor spending.
-
----
-
-## 🛠️ Tech Stack
-
-| Technology | Purpose |
-|---|---|
-| 🐍 Python | Application logic |
-| 🎈 Streamlit | Interactive dashboard |
-| 🐼 Pandas | Data processing |
-| 🔢 NumPy | Numerical operations |
-| 📊 Plotly | Data visualization |
-| 🗄️ SQL / SQLite | Data storage |
-
----
-
-## 📂 Project Structure
-
-```text
-FinOps360/
-│
-├── app.py
-├── requirements.txt
-├── README.md
-└── .gitignore
-```
-
----
-
-## ⚙️ Run Locally
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/gugulothlalu/FinOps360.git
-```
-
-### 2. Open the project
-
-```bash
-cd FinOps360
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Start the application
-
-```bash
-streamlit run app.py
-```
-
----
-
-## 📊 Dashboard Modules
-
-```text
-┌─────────────────────────────────────┐
-│             FinOps360               │
-├─────────────────────────────────────┤
-│ 📊 Dashboard                        │
-│ 💳 Expenses                         │
-│ 🧾 Invoices                         │
-│ 🏢 Vendors                          │
-│ 📈 Reports                          │
-│ ⚠️ Budget Monitoring                │
-│ 🚨 Smart Invoice Alerts             │
-│ 💼 Financial Health Summary         │
-└─────────────────────────────────────┘
-```
-
----
-
-## 🎯 Project Objective
-
-The objective of FinOps360 is to demonstrate how financial and operational data can be transformed into meaningful insights for:
-
-- 💰 Expense control
-- 🧾 Invoice management
-- 📅 Payment monitoring
-- 🏢 Vendor management
-- 📊 Budget tracking
-- ⚠️ Financial risk identification
-- 📈 Data-driven decision making
-
----
-
-## 🔮 Future Enhancements
-
-- 🔐 User authentication and role-based access
-- ☁️ Cloud database integration
-- 📧 Automated invoice reminders
-- 🤖 AI-powered expense forecasting
-- 📱 Mobile-responsive interface
-- 📊 Advanced financial forecasting
-
----
-
-## 👨‍💻 Author
-
-<div align="center">
-
-### **Gugulothu Lalu Laxmi Varaprasad**
-
-🎓 B.Tech — Bio Engineering  
-🏫 National Institute of Technology, Agartala
-
-</div>
-
----
-
-<div align="center">
-
-### ⭐ If you find this project useful, consider giving it a star!
-
-</div>
