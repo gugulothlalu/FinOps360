@@ -23,7 +23,7 @@ DATABASE = "finops.db"
 
 def init_visitor_tracking():
     """Create the visitor tracking table if it does not exist."""
-    conn = get_connection()
+    conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
 
     cursor.execute(
@@ -45,7 +45,7 @@ def track_visit():
     if "finops_visit_recorded" not in st.session_state:
         session_id = str(uuid.uuid4())
 
-        conn = get_connection()
+        conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
         cursor.execute(
@@ -64,7 +64,7 @@ def track_visit():
 
 def get_visitor_stats():
     """Return total visits and unique visitor sessions."""
-    conn = get_connection()
+    conn = sqlite3.connect(DATABASE)
 
     stats = pd.read_sql_query(
         """
@@ -98,7 +98,7 @@ def get_connection():
 # --------------------------------------------------
 
 def load_expenses():
-    conn = get_connection()
+    conn = sqlite3.connect(DATABASE)
 
     df = pd.read_sql_query(
         """
