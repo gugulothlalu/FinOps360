@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import date
 import uuid
+from datetime import date, datetime, timedelta
 
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
-
 st.set_page_config(
     page_title="FinOps360",
     page_icon="💰",
@@ -18,268 +17,547 @@ DATABASE = "finops.db"
 
 
 # --------------------------------------------------
-# VISITOR ANALYTICS
+# DATABASE
 # --------------------------------------------------
+def get_connection():
+    return sqlite3.connect(DATABASE, timeout=30)
 
+
+# --------------------------------------------------
+# VISITOR ANALYTICS DATABASE
+# --------------------------------------------------
 def init_visitor_tracking():
-    """Create the visitor tracking table if it does not exist."""
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
+    """Create visitor analytics table safely."""
+    conn = get_connection()
 
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS app_visits (
-            visit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            visit_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-
-def track_visit():
-    """Record one visit per Streamlit session."""
-    if "finops_visit_recorded" not in st.session_state:
-        session_id = str(uuid.uuid4())
-
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-
-        cursor.execute(
+    try:
+        conn.execute(
             """
-            INSERT INTO app_visits (session_id)
-            VALUES (?)
-            """,
-            (session_id,)
+            CREATE TABLE IF NOT EXISTS app_visits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                visit_date TEXT NOT NULL,
+                last_seen TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_visits_visit_date
+            ON app_visits(visit_date)
+            """
         )
 
         conn.commit()
+
+    finally:
         conn.close()
 
-        st.session_state["finops_visit_recorded"] = True
+
+def track_current_session():
+    """Record one visit for each browser session."""
+
+    if "finops_session_id" not in st.session_state:
+
+        st.session_state.finops_session_id = str(
+            uuid.uuid4()
+        )
+
+        now = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        conn = get_connection()
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO app_visits
+                (
+                    session_id,
+                    visit_date,
+                    last_seen
+                )
+                VALUES (?, ?, ?)
+                """,
+                (
+                    st.session_state.finops_session_id,
+                    date.today().isoformat(),
+                    now,
+                ),
+            )
+
+            conn.commit()
+
+        finally:
+            conn.close()
+
+    else:
+
+        now = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        conn = get_connection()
+
+        try:
+            conn.execute(
+                """
+                UPDATE app_visits
+                SET last_seen = ?
+                WHERE session_id = ?
+                """,
+                (
+                    now,
+                    st.session_state.finops_session_id,
+                ),
+            )
+
+            conn.commit()
+
+        finally:
+            conn.close()
 
 
-def get_visitor_stats():
-    """Return total visits and unique visitor sessions."""
-    conn = sqlite3.connect(DATABASE)
+def load_usage_analytics():
 
-    stats = pd.read_sql_query(
-        """
-        SELECT
-            COUNT(*) AS total_visits,
-            COUNT(DISTINCT session_id) AS unique_visitors
-        FROM app_visits
-        """,
-        conn
-    )
+    conn = get_connection()
 
-    conn.close()
+    try:
 
-    return int(stats.iloc[0]["total_visits"]), int(stats.iloc[0]["unique_visitors"])
+        return pd.read_sql_query(
+            """
+            SELECT
+                id,
+                session_id,
+                visit_date,
+                last_seen
+            FROM app_visits
+            ORDER BY visit_date ASC
+            """,
+            conn,
+        )
+
+    finally:
+        conn.close()
 
 
+# --------------------------------------------------
+# INITIALIZE VISITOR TRACKING
+# --------------------------------------------------
 init_visitor_tracking()
-track_visit()
-
-
-# --------------------------------------------------
-# DATABASE
-# --------------------------------------------------
-
-def get_connection():
-    return sqlite3.connect(DATABASE)
+track_current_session()
 
 
 # --------------------------------------------------
 # LOAD EXPENSES
 # --------------------------------------------------
-
 def load_expenses():
-    conn = sqlite3.connect(DATABASE)
 
-    df = pd.read_sql_query(
-        """
-        SELECT
-            expense_id,
-            expense_date,
-            category,
-            department,
-            amount,
-            description
-        FROM expenses
-        ORDER BY expense_date DESC
-        """,
-        conn
-    )
+    conn = get_connection()
 
-    conn.close()
-    return df
+    try:
+
+        return pd.read_sql_query(
+            """
+            SELECT
+                expense_id,
+                expense_date,
+                category,
+                department,
+                amount,
+                description
+            FROM expenses
+            ORDER BY expense_date DESC
+            """,
+            conn,
+        )
+
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------
 # LOAD INVOICES
 # --------------------------------------------------
-
 def load_invoices():
+
     conn = get_connection()
 
-    df = pd.read_sql_query(
-        """
-        SELECT
-            invoices.invoice_id,
-            invoices.vendor_id,
-            vendors.vendor_name,
-            invoices.invoice_number,
-            invoices.invoice_date,
-            invoices.due_date,
-            invoices.amount,
-            invoices.status
-        FROM invoices
-        LEFT JOIN vendors
-        ON invoices.vendor_id = vendors.vendor_id
-        ORDER BY invoices.due_date ASC
-        """,
-        conn
-    )
+    try:
 
-    conn.close()
-    return df
+        return pd.read_sql_query(
+            """
+            SELECT
+                invoices.invoice_id,
+                invoices.vendor_id,
+                vendors.vendor_name,
+                invoices.invoice_number,
+                invoices.invoice_date,
+                invoices.due_date,
+                invoices.amount,
+                invoices.status
+            FROM invoices
+            LEFT JOIN vendors
+            ON invoices.vendor_id = vendors.vendor_id
+            ORDER BY invoices.due_date ASC
+            """,
+            conn,
+        )
+
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------
 # LOAD VENDORS
 # --------------------------------------------------
-
 def load_vendors():
+
     conn = get_connection()
 
-    df = pd.read_sql_query(
-        """
-        SELECT
-            vendor_id,
-            vendor_name
-        FROM vendors
-        ORDER BY vendor_name
-        """,
-        conn
-    )
+    try:
 
-    conn.close()
-    return df
+        return pd.read_sql_query(
+            """
+            SELECT
+                vendor_id,
+                vendor_name
+            FROM vendors
+            ORDER BY vendor_name
+            """,
+            conn,
+        )
+
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------
 # LOAD BUDGETS
 # --------------------------------------------------
-
 def load_budgets():
+
     conn = get_connection()
 
-    df = pd.read_sql_query(
-        """
-        SELECT
-            month,
-            category,
-            budget_amount
-        FROM budgets
-        """,
-        conn
-    )
+    try:
 
-    conn.close()
-    return df
+        return pd.read_sql_query(
+            """
+            SELECT
+                month,
+                category,
+                budget_amount
+            FROM budgets
+            """,
+            conn,
+        )
+
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------
 # ADD EXPENSE
 # --------------------------------------------------
-
 def add_expense(
     expense_date,
     category,
     department,
     amount,
-    description
+    description,
 ):
 
     conn = get_connection()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO expenses
-        (
-            expense_date,
-            category,
-            department,
-            amount,
-            description
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            expense_date,
-            category,
-            department,
-            amount,
-            description
-        )
-    )
+    try:
 
-    conn.commit()
-    conn.close()
+        conn.execute(
+            """
+            INSERT INTO expenses
+            (
+                expense_date,
+                category,
+                department,
+                amount,
+                description
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                expense_date,
+                category,
+                department,
+                amount,
+                description,
+            ),
+        )
+
+        conn.commit()
+
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------
 # ADD INVOICE
 # --------------------------------------------------
-
 def add_invoice(
     vendor_id,
     invoice_number,
     invoice_date,
     due_date,
     amount,
-    status
+    status,
 ):
 
     conn = get_connection()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO invoices
-        (
-            vendor_id,
-            invoice_number,
-            invoice_date,
-            due_date,
-            amount,
-            status
+    try:
+
+        conn.execute(
+            """
+            INSERT INTO invoices
+            (
+                vendor_id,
+                invoice_number,
+                invoice_date,
+                due_date,
+                amount,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                vendor_id,
+                invoice_number,
+                invoice_date,
+                due_date,
+                amount,
+                status,
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            vendor_id,
-            invoice_number,
-            invoice_date,
-            due_date,
-            amount,
-            status
+
+        conn.commit()
+
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------
+# APP USAGE ANALYTICS
+# --------------------------------------------------
+def show_usage_analytics():
+
+    st.subheader("📊 App Usage Analytics")
+
+    visits = load_usage_analytics()
+
+    if visits.empty:
+
+        st.info(
+            "No app usage data recorded yet."
         )
+
+        return
+
+    visits["visit_date"] = pd.to_datetime(
+        visits["visit_date"],
+        errors="coerce"
     )
 
-    conn.commit()
-    conn.close()
+    # ----------------------------------------------
+    # BASIC METRICS
+    # ----------------------------------------------
+
+    total_visits = len(visits)
+
+    unique_visitors = visits[
+        "session_id"
+    ].nunique()
+
+    today_visits = int(
+        (
+            visits["visit_date"].dt.date
+            == date.today()
+        ).sum()
+    )
+
+    last_seen = pd.to_datetime(
+        visits["last_seen"],
+        errors="coerce"
+    )
+
+    cutoff = pd.Timestamp(
+        datetime.now()
+        - timedelta(minutes=15)
+    )
+
+    active_sessions = int(
+        (last_seen >= cutoff).sum()
+    )
+
+    # ----------------------------------------------
+    # KPI CARDS
+    # ----------------------------------------------
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            "👀 Total Visits",
+            total_visits
+        )
+
+    with col2:
+
+        st.metric(
+            "👤 Unique Visitors",
+            unique_visitors
+        )
+
+    with col3:
+
+        st.metric(
+            "🟢 Active Sessions",
+            active_sessions
+        )
+
+    with col4:
+
+        st.metric(
+            "📅 Today",
+            today_visits
+        )
+
+    st.caption(
+        "Visitor statistics are estimated from browser "
+        "sessions. Opening a new browser session is counted "
+        "as a new visit."
+    )
+
+    # ----------------------------------------------
+    # TREND GRAPH
+    # ----------------------------------------------
+
+    st.markdown("### 📈 Visitor Trend")
+
+    trend_view = st.radio(
+        "View",
+        [
+            "Monthly",
+            "Yearly"
+        ],
+        horizontal=True,
+        key="usage_trend_view"
+    )
+
+    # ==============================================
+    # MONTHLY
+    # ==============================================
+
+    if trend_view == "Monthly":
+
+        visits["month"] = (
+            visits["visit_date"]
+            .dt.to_period("M")
+        )
+
+        monthly = (
+            visits
+            .groupby("month")
+            .size()
+            .rename("Visits")
+        )
+
+        # Last 12 months
+        current_month = pd.Timestamp(
+            date.today()
+        ).to_period("M")
+
+        start_month = (
+            current_month - 11
+        )
+
+        month_index = pd.period_range(
+            start=start_month,
+            end=current_month,
+            freq="M"
+        )
+
+        monthly = monthly.reindex(
+            month_index,
+            fill_value=0
+        )
+
+        monthly.index = (
+            monthly.index
+            .strftime("%b %Y")
+        )
+
+        st.line_chart(
+            monthly,
+            use_container_width=True
+        )
+
+    # ==============================================
+    # YEARLY
+    # ==============================================
+
+    else:
+
+        visits["year"] = (
+            visits["visit_date"]
+            .dt.year
+        )
+
+        yearly = (
+            visits
+            .groupby("year")
+            .size()
+            .rename("Visits")
+            .sort_index()
+        )
+
+        current_year = date.today().year
+
+        if len(yearly) > 0:
+
+            start_year = min(
+                int(yearly.index.min()),
+                current_year
+            )
+
+        else:
+
+            start_year = current_year
+
+        year_index = pd.Index(
+            range(
+                start_year,
+                current_year + 1
+            ),
+            name="Year"
+        )
+
+        yearly = yearly.reindex(
+            year_index,
+            fill_value=0
+        )
+
+        st.bar_chart(
+            yearly,
+            use_container_width=True
+        )
+
+    st.divider()
 
 
 # --------------------------------------------------
 # SIDEBAR
 # --------------------------------------------------
-
 page = st.sidebar.radio(
     "Navigation",
     [
@@ -291,10 +569,10 @@ page = st.sidebar.radio(
     ]
 )
 
+
 # ==================================================
 # EXPENSE PAGE
 # ==================================================
-
 if page == "💳 Expenses":
 
     st.title("💳 Expense Management")
@@ -383,7 +661,9 @@ if page == "💳 Expenses":
             else:
 
                 add_expense(
-                    expense_date.strftime("%Y-%m-%d"),
+                    expense_date.strftime(
+                        "%Y-%m-%d"
+                    ),
                     category,
                     department,
                     amount,
@@ -391,24 +671,36 @@ if page == "💳 Expenses":
                 )
 
                 st.success(
-                    f"Expense of ₹{amount:,.2f} added successfully!"
+                    f"Expense of ₹{amount:,.2f} "
+                    "added successfully!"
                 )
 
                 st.rerun()
 
     st.divider()
 
-    st.subheader("📋 Expense Transactions")
+    st.subheader(
+        "📋 Expense Transactions"
+    )
 
     expenses = load_expenses()
 
-    display_expenses = expenses.copy()
+    if expenses.empty:
 
-    if not display_expenses.empty:
+        st.info(
+            "No expense transactions found."
+        )
+
+    else:
+
+        display_expenses = expenses.copy()
 
         display_expenses["amount"] = (
             display_expenses["amount"]
-            .apply(lambda x: f"₹{x:,.2f}")
+            .apply(
+                lambda x:
+                f"₹{x:,.2f}"
+            )
         )
 
         display_expenses.columns = [
@@ -426,13 +718,15 @@ if page == "💳 Expenses":
             hide_index=True
         )
 
+
 # ==================================================
 # VENDOR PAGE
 # ==================================================
-
 elif page == "🏢 Vendors":
 
-    st.title("🏢 Vendor Management")
+    st.title(
+        "🏢 Vendor Management"
+    )
 
     st.caption(
         "Manage vendors used for invoices and payments"
@@ -440,11 +734,9 @@ elif page == "🏢 Vendors":
 
     st.divider()
 
-    # ----------------------------------------------
-    # ADD VENDOR
-    # ----------------------------------------------
-
-    st.subheader("➕ Add New Vendor")
+    st.subheader(
+        "➕ Add New Vendor"
+    )
 
     with st.form(
         "vendor_form",
@@ -472,23 +764,25 @@ elif page == "🏢 Vendors":
             else:
 
                 conn = get_connection()
-                cursor = conn.cursor()
 
                 try:
 
-                    cursor.execute(
+                    conn.execute(
                         """
                         INSERT INTO vendors
                         (vendor_name)
                         VALUES (?)
                         """,
-                        (vendor_name.strip(),)
+                        (
+                            vendor_name.strip(),
+                        )
                     )
 
                     conn.commit()
 
                     st.success(
-                        f"Vendor '{vendor_name}' added successfully!"
+                        f"Vendor '{vendor_name}' "
+                        "added successfully!"
                     )
 
                     st.rerun()
@@ -505,11 +799,9 @@ elif page == "🏢 Vendors":
 
     st.divider()
 
-    # ----------------------------------------------
-    # VENDOR LIST
-    # ----------------------------------------------
-
-    st.subheader("📋 Registered Vendors")
+    st.subheader(
+        "📋 Registered Vendors"
+    )
 
     vendors = load_vendors()
 
@@ -538,13 +830,16 @@ elif page == "🏢 Vendors":
             use_container_width=True,
             hide_index=True
         )
+
+
 # ==================================================
 # INVOICE PAGE
 # ==================================================
-
 elif page == "🧾 Invoices":
 
-    st.title("🧾 Invoice Management")
+    st.title(
+        "🧾 Invoice Management"
+    )
 
     st.caption(
         "Track vendor invoices and payment status"
@@ -554,11 +849,9 @@ elif page == "🧾 Invoices":
 
     vendors = load_vendors()
 
-    # ----------------------------------------------
-    # ADD INVOICE
-    # ----------------------------------------------
-
-    st.subheader("➕ Create New Invoice")
+    st.subheader(
+        "➕ Create New Invoice"
+    )
 
     if vendors.empty:
 
@@ -577,9 +870,10 @@ elif page == "🧾 Invoices":
 
             with col1:
 
-                vendor_names = vendors[
-                    "vendor_name"
-                ].tolist()
+                vendor_names = (
+                    vendors["vendor_name"]
+                    .tolist()
+                )
 
                 selected_vendor = st.selectbox(
                     "Vendor",
@@ -653,7 +947,9 @@ elif page == "🧾 Invoices":
                     try:
 
                         add_invoice(
-                            int(selected_vendor_id),
+                            int(
+                                selected_vendor_id
+                            ),
                             invoice_number.strip(),
                             invoice_date.strftime(
                                 "%Y-%m-%d"
@@ -666,7 +962,8 @@ elif page == "🧾 Invoices":
                         )
 
                         st.success(
-                            f"Invoice {invoice_number} created successfully!"
+                            f"Invoice {invoice_number} "
+                            "created successfully!"
                         )
 
                         st.rerun()
@@ -679,27 +976,42 @@ elif page == "🧾 Invoices":
 
     st.divider()
 
-    # ----------------------------------------------
-    # INVOICE SUMMARY
-    # ----------------------------------------------
-
     invoices = load_invoices()
 
-    if not invoices.empty:
+    if invoices.empty:
+
+        st.info(
+            "No invoices found."
+        )
+
+    else:
 
         pending = invoices[
-            invoices["status"] == "Pending"
+            invoices["status"]
+            == "Pending"
         ]
 
         paid = invoices[
-            invoices["status"] == "Paid"
+            invoices["status"]
+            == "Paid"
         ]
 
-        today = pd.Timestamp(date.today())
+        today = pd.Timestamp(
+            date.today()
+        )
 
         overdue = invoices[
-            (invoices["status"] == "Pending") &
-            (pd.to_datetime(invoices["due_date"]) < today)
+            (
+                invoices["status"]
+                == "Pending"
+            )
+            &
+            (
+                pd.to_datetime(
+                    invoices["due_date"]
+                )
+                < today
+            )
         ]
 
         col1, col2, col3 = st.columns(3)
@@ -727,14 +1039,11 @@ elif page == "🧾 Invoices":
 
         st.divider()
 
-        # ------------------------------------------
-        # OVERDUE ALERT
-        # ------------------------------------------
-
         if not overdue.empty:
 
             st.error(
-                f"⚠️ {len(overdue)} invoice(s) are overdue!"
+                f"⚠️ {len(overdue)} "
+                "invoice(s) are overdue!"
             )
 
             overdue_display = overdue[
@@ -749,7 +1058,10 @@ elif page == "🧾 Invoices":
 
             overdue_display["amount"] = (
                 overdue_display["amount"]
-                .apply(lambda x: f"₹{x:,.0f}")
+                .apply(
+                    lambda x:
+                    f"₹{x:,.0f}"
+                )
             )
 
             st.dataframe(
@@ -758,11 +1070,15 @@ elif page == "🧾 Invoices":
                 hide_index=True
             )
 
-        # ------------------------------------------
-        # ALL INVOICES
-        # ------------------------------------------
+        else:
 
-        st.subheader("📋 All Invoices")
+            st.success(
+                "✅ No overdue pending invoices."
+            )
+
+        st.subheader(
+            "📋 All Invoices"
+        )
 
         invoice_display = invoices[
             [
@@ -777,7 +1093,10 @@ elif page == "🧾 Invoices":
 
         invoice_display["amount"] = (
             invoice_display["amount"]
-            .apply(lambda x: f"₹{x:,.0f}")
+            .apply(
+                lambda x:
+                f"₹{x:,.0f}"
+            )
         )
 
         st.dataframe(
@@ -786,43 +1105,43 @@ elif page == "🧾 Invoices":
             hide_index=True
         )
 
-    else:
-
-        st.info(
-            "No invoices found."
-        )
 
 # ==================================================
 # REPORTS PAGE
 # ==================================================
-
 elif page == "📈 Reports":
 
-    st.title("📈 Financial Reports")
+    st.title(
+        "📈 Financial Reports"
+    )
+
     st.caption(
         "Live financial and operations analytics"
     )
-
-    # ----------------------------------------------
-    # LOAD LIVE DATA FROM DATABASE
-    # ----------------------------------------------
 
     expenses = load_expenses()
     invoices = load_invoices()
     budgets = load_budgets()
 
-    # ----------------------------------------------
-    # FILTERS
-    # ----------------------------------------------
-
-    st.subheader("🔎 Report Filters")
+    st.subheader(
+        "🔎 Report Filters"
+    )
 
     filter_col1, filter_col2 = st.columns(2)
 
     with filter_col1:
 
-        categories = ["All"] + sorted(
-            expenses["category"].dropna().unique().tolist()
+        categories = (
+            ["All"]
+            +
+            sorted(
+                expenses[
+                    "category"
+                ]
+                .dropna()
+                .unique()
+                .tolist()
+            )
         )
 
         selected_category = st.selectbox(
@@ -832,8 +1151,17 @@ elif page == "📈 Reports":
 
     with filter_col2:
 
-        departments = ["All"] + sorted(
-            expenses["department"].dropna().unique().tolist()
+        departments = (
+            ["All"]
+            +
+            sorted(
+                expenses[
+                    "department"
+                ]
+                .dropna()
+                .unique()
+                .tolist()
+            )
         )
 
         selected_department = st.selectbox(
@@ -841,206 +1169,270 @@ elif page == "📈 Reports":
             departments
         )
 
-    # ----------------------------------------------
-    # APPLY FILTERS
-    # ----------------------------------------------
-
     filtered_expenses = expenses.copy()
 
     if selected_category != "All":
-        filtered_expenses = filtered_expenses[
-            filtered_expenses["category"] == selected_category
-        ]
+
+        filtered_expenses = (
+            filtered_expenses[
+                filtered_expenses[
+                    "category"
+                ]
+                == selected_category
+            ]
+        )
 
     if selected_department != "All":
-        filtered_expenses = filtered_expenses[
-            filtered_expenses["department"] == selected_department
-        ]
 
-    # ----------------------------------------------
-    # KPI CALCULATIONS
-    # ----------------------------------------------
+        filtered_expenses = (
+            filtered_expenses[
+                filtered_expenses[
+                    "department"
+                ]
+                == selected_department
+            ]
+        )
 
-    total_expenses = filtered_expenses["amount"].sum()
+    total_expenses = (
+        filtered_expenses[
+            "amount"
+        ].sum()
+    )
 
-    pending_payments = invoices[
-        invoices["status"] == "Pending"
-    ]["amount"].sum()
+    pending_payments = (
+        invoices[
+            invoices["status"]
+            == "Pending"
+        ]["amount"].sum()
+    )
 
-    paid_invoices = invoices[
-        invoices["status"] == "Paid"
-    ]["amount"].sum()
+    paid_invoices = (
+        invoices[
+            invoices["status"]
+            == "Paid"
+        ]["amount"].sum()
+    )
 
-    total_budget = budgets["budget_amount"].sum()
+    total_budget = (
+        budgets[
+            "budget_amount"
+        ].sum()
+    )
 
     budget_utilization = (
-        total_expenses / total_budget * 100
+        total_expenses
+        /
+        total_budget
+        *
+        100
         if total_budget > 0
         else 0
     )
-
-    # ----------------------------------------------
-    # KPI CARDS
-    # ----------------------------------------------
 
     st.divider()
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+
         st.metric(
             "Total Expenses",
             f"₹{total_expenses:,.0f}"
         )
 
     with col2:
+
         st.metric(
             "Pending Payments",
             f"₹{pending_payments:,.0f}"
         )
 
     with col3:
+
         st.metric(
             "Paid Invoices",
             f"₹{paid_invoices:,.0f}"
         )
 
     with col4:
+
         st.metric(
             "Budget Utilization",
             f"{budget_utilization:.1f}%"
         )
 
-    # ----------------------------------------------
-    # EXPENSE ANALYSIS
-    # ----------------------------------------------
-
     st.divider()
 
-    st.subheader("📊 Expense Analysis")
+    st.subheader(
+        "📊 Expense Analysis"
+    )
 
     left, right = st.columns(2)
 
     with left:
 
-        st.markdown("### 💰 Expense by Category")
+        st.markdown(
+            "### 💰 Expense by Category"
+        )
 
         if not filtered_expenses.empty:
 
             category_expenses = (
                 filtered_expenses
-                .groupby("category")["amount"]
+                .groupby("category")[
+                    "amount"
+                ]
                 .sum()
-                .sort_values(ascending=False)
+                .sort_values(
+                    ascending=False
+                )
             )
 
-            st.bar_chart(category_expenses)
+            st.bar_chart(
+                category_expenses,
+                use_container_width=True
+            )
 
         else:
 
-            st.info("No expense data available.")
+            st.info(
+                "No expense data available."
+            )
 
     with right:
 
-        st.markdown("### 🏢 Expense by Department")
+        st.markdown(
+            "### 🏢 Expense by Department"
+        )
 
         if not filtered_expenses.empty:
 
             department_expenses = (
                 filtered_expenses
-                .groupby("department")["amount"]
+                .groupby("department")[
+                    "amount"
+                ]
                 .sum()
-                .sort_values(ascending=False)
+                .sort_values(
+                    ascending=False
+                )
             )
 
-            st.bar_chart(department_expenses)
+            st.bar_chart(
+                department_expenses,
+                use_container_width=True
+            )
 
         else:
 
-            st.info("No expense data available.")
-
-    # ----------------------------------------------
-    # MONTHLY TREND
-    # ----------------------------------------------
+            st.info(
+                "No expense data available."
+            )
 
     st.divider()
 
-    st.subheader("📈 Monthly Expense Trend")
+    st.subheader(
+        "📈 Monthly Expense Trend"
+    )
 
     if not filtered_expenses.empty:
 
-        monthly_expenses = filtered_expenses.copy()
-
-        monthly_expenses["expense_date"] = pd.to_datetime(
-            monthly_expenses["expense_date"]
+        monthly_expenses = (
+            filtered_expenses.copy()
         )
 
-        monthly_expenses["month"] = (
-            monthly_expenses["expense_date"]
-            .dt.to_period("M")
-            .astype(str)
+        monthly_expenses[
+            "expense_date"
+        ] = pd.to_datetime(
+            monthly_expenses[
+                "expense_date"
+            ],
+            errors="coerce"
         )
 
         monthly_summary = (
             monthly_expenses
-            .groupby("month")["amount"]
+            .dropna(
+                subset=[
+                    "expense_date"
+                ]
+            )
+            .assign(
+                month=lambda df:
+                df[
+                    "expense_date"
+                ]
+                .dt
+                .to_period("M")
+                .astype(str)
+            )
+            .groupby("month")[
+                "amount"
+            ]
             .sum()
             .sort_index()
         )
 
-        st.line_chart(monthly_summary)
+        st.line_chart(
+            monthly_summary,
+            use_container_width=True
+        )
 
     else:
 
-        st.info("No monthly expense data available.")
-
-    # ----------------------------------------------
-    # BUDGET MONITORING
-    # ----------------------------------------------
+        st.info(
+            "No monthly expense data available."
+        )
 
     st.divider()
 
-    st.subheader("⚠️ Budget Monitoring")
+    st.subheader(
+        "⚠️ Budget Monitoring"
+    )
 
     if budget_utilization >= 90:
 
         st.error(
-            f"Critical: {budget_utilization:.1f}% "
+            f"Critical: "
+            f"{budget_utilization:.1f}% "
             "of the budget has been utilized."
         )
 
     elif budget_utilization >= 75:
 
         st.warning(
-            f"Warning: {budget_utilization:.1f}% "
+            f"Warning: "
+            f"{budget_utilization:.1f}% "
             "of the budget has been utilized."
         )
 
     else:
 
         st.success(
-            f"Budget utilization is healthy at "
-            f"{budget_utilization:.1f}%."
+            f"Budget utilization is healthy "
+            f"at {budget_utilization:.1f}%."
         )
-
-    # ----------------------------------------------
-    # EXPORT REPORT
-    # ----------------------------------------------
 
     st.divider()
 
-    st.subheader("📥 Export Report")
+    st.subheader(
+        "📥 Export Report"
+    )
 
     if not filtered_expenses.empty:
 
-        csv_data = filtered_expenses.to_csv(
-            index=False
-        ).encode("utf-8")
+        csv_data = (
+            filtered_expenses
+            .to_csv(index=False)
+            .encode("utf-8")
+        )
 
         st.download_button(
             label="📥 Download Expense Report",
             data=csv_data,
-            file_name="finops_expense_report.csv",
+            file_name=(
+                "finops_expense_report.csv"
+            ),
             mime="text/csv",
             use_container_width=True
         )
@@ -1051,25 +1443,35 @@ elif page == "📈 Reports":
             "No expense data available for export."
         )
 
-    # ----------------------------------------------
-    # SMART INVOICE ALERTS
-    # ----------------------------------------------
-
     st.divider()
 
-    st.subheader("🚨 Smart Invoice Alerts")
+    st.subheader(
+        "🚨 Smart Invoice Alerts"
+    )
 
-    today = pd.Timestamp(date.today())
+    today = pd.Timestamp(
+        date.today()
+    )
 
     overdue = invoices[
-        (invoices["status"] == "Pending") &
-        (pd.to_datetime(invoices["due_date"]) < today)
+        (
+            invoices["status"]
+            == "Pending"
+        )
+        &
+        (
+            pd.to_datetime(
+                invoices["due_date"]
+            )
+            < today
+        )
     ]
 
     if not overdue.empty:
 
         st.error(
-            f"🚨 {len(overdue)} overdue invoice(s) "
+            f"🚨 {len(overdue)} "
+            "overdue invoice(s) "
             "require immediate attention."
         )
 
@@ -1093,160 +1495,202 @@ elif page == "📈 Reports":
             "✅ No overdue pending invoices."
         )
 
-    # ----------------------------------------------
-    # SPENDING ANOMALY DETECTION
-    # ----------------------------------------------
-
     st.divider()
 
-    st.subheader("📊 Spending Insights")
+    st.subheader(
+        "📊 Spending Insights"
+    )
 
     if not filtered_expenses.empty:
 
         category_spending = (
             filtered_expenses
-            .groupby("category")["amount"]
+            .groupby("category")[
+                "amount"
+            ]
             .sum()
-            .sort_values(ascending=False)
+            .sort_values(
+                ascending=False
+            )
         )
 
-        average_spending = category_spending.mean()
+        average_spending = (
+            category_spending.mean()
+        )
 
         if average_spending > 0:
-            highest_category = category_spending.idxmax()
-            highest_amount = category_spending.max()
-            ratio = highest_amount / average_spending
+
+            highest_category = (
+                category_spending.idxmax()
+            )
+
+            highest_amount = (
+                category_spending.max()
+            )
+
+            ratio = (
+                highest_amount
+                /
+                average_spending
+            )
 
             if ratio >= 1.5:
+
                 st.warning(
-                    f"⚠️ High spending detected in "
-                    f"**{highest_category}**: "
+                    f"⚠️ High spending detected "
+                    f"in **{highest_category}**: "
                     f"₹{highest_amount:,.0f}. "
-                    f"This is {ratio:.1f}× the average category spending."
+                    f"This is {ratio:.1f}× "
+                    "the average category spending."
                 )
+
             else:
+
                 st.success(
-                    "✅ Spending is distributed normally "
-                    "across categories."
+                    "✅ Spending is distributed "
+                    "normally across categories."
                 )
 
             st.dataframe(
                 category_spending
-                .rename("Total Spending")
+                .rename(
+                    "Total Spending"
+                )
                 .to_frame()
-                .style.format("₹{:,.0f}"),
+                .style.format(
+                    "₹{:,.0f}"
+                ),
                 use_container_width=True
             )
 
-        else:
-            st.info("No spending data available.")
-
     else:
-        st.info("No expense data available.")
 
-    # ----------------------------------------------
-    # FINANCIAL HEALTH SUMMARY
-    # ----------------------------------------------
+        st.info(
+            "No expense data available."
+        )
 
     st.divider()
 
-    st.subheader("💼 Financial Health Summary")
+    st.subheader(
+        "💼 Financial Health Summary"
+    )
 
     if budget_utilization >= 90:
+
         risk_level = "🔴 High Risk"
+
         recommendation = (
             "Budget utilization is very high. "
-            "Review expenses and control additional spending."
+            "Review expenses and control "
+            "additional spending."
         )
 
     elif budget_utilization >= 75:
+
         risk_level = "🟡 Moderate Risk"
+
         recommendation = (
-            "Budget utilization is approaching the limit. "
-            "Monitor spending carefully."
+            "Budget utilization is approaching "
+            "the limit. Monitor spending carefully."
         )
 
     else:
+
         risk_level = "🟢 Low Risk"
+
         recommendation = (
-            "Financial utilization is currently within "
-            "a healthy range."
+            "Financial utilization is currently "
+            "within a healthy range."
         )
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         st.metric(
             "Financial Risk Level",
             risk_level
         )
 
     with col2:
+
         st.metric(
             "Budget Remaining",
             f"₹{max(total_budget - total_expenses, 0):,.0f}"
         )
 
-    st.info(f"💡 Recommendation: {recommendation}")     
+    st.info(
+        f"💡 Recommendation: "
+        f"{recommendation}"
+    )
+
+
 # ==================================================
 # DASHBOARD
 # ==================================================
-
 else:
 
-    st.title("💰 FinOps360")
+    st.title(
+        "💰 FinOps360"
+    )
 
     st.caption(
         "Finance & Operations Analytics Dashboard"
     )
 
-    # ----------------------------------------------
-    # VISITOR ANALYTICS
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # APP USAGE ANALYTICS
+    # --------------------------------------------------
 
-    with st.expander("📊 App Usage Analytics"):
-        total_visits, unique_visitors = get_visitor_stats()
+    show_usage_analytics()
 
-        analytics_col1, analytics_col2 = st.columns(2)
-
-        with analytics_col1:
-            st.metric("👀 Total Visits", total_visits)
-
-        with analytics_col2:
-            st.metric("👤 Unique Sessions", unique_visitors)
-
-        st.caption(
-            "Counts app sessions recorded by FinOps360. "
-            "A new browser session is counted as a new visitor session."
-        )
-
-    st.divider()
+    # --------------------------------------------------
+    # FINANCIAL DATA
+    # --------------------------------------------------
 
     expenses = load_expenses()
     invoices = load_invoices()
     budgets = load_budgets()
 
-    total_expenses = expenses["amount"].sum()
+    total_expenses = (
+        expenses["amount"].sum()
+    )
 
-    pending_invoices = invoices[
-        invoices["status"] == "Pending"
-    ]["amount"].sum()
+    pending_invoices = (
+        invoices[
+            invoices["status"]
+            == "Pending"
+        ]["amount"].sum()
+    )
 
-    paid_invoices = invoices[
-        invoices["status"] == "Paid"
-    ]["amount"].sum()
+    paid_invoices = (
+        invoices[
+            invoices["status"]
+            == "Paid"
+        ]["amount"].sum()
+    )
 
-    total_budget = budgets["budget_amount"].sum()
+    total_budget = (
+        budgets[
+            "budget_amount"
+        ].sum()
+    )
 
     budget_utilization = (
-        total_expenses / total_budget * 100
+        total_expenses
+        /
+        total_budget
+        *
+        100
         if total_budget > 0
         else 0
     )
 
-    # ----------------------------------------------
-    # KPI CARDS
-    # ----------------------------------------------
+    st.divider()
+
+    # --------------------------------------------------
+    # FINANCIAL KPI CARDS
+    # --------------------------------------------------
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -1280,106 +1724,196 @@ else:
 
     st.divider()
 
-    # ----------------------------------------------
+    # --------------------------------------------------
     # CHARTS
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     left, right = st.columns(2)
 
     with left:
 
-        st.subheader("Expense by Category")
-
-        category_expenses = (
-            expenses
-            .groupby("category")["amount"]
-            .sum()
-            .sort_values(ascending=False)
+        st.subheader(
+            "📊 Expense by Category"
         )
 
-        st.bar_chart(category_expenses)
+        if not expenses.empty:
+
+            category_expenses = (
+                expenses
+                .groupby("category")[
+                    "amount"
+                ]
+                .sum()
+                .sort_values(
+                    ascending=False
+                )
+            )
+
+            st.bar_chart(
+                category_expenses,
+                use_container_width=True
+            )
+
+        else:
+
+            st.info(
+                "No expense data available."
+            )
 
     with right:
 
-        st.subheader("Expense by Department")
-
-        department_expenses = (
-            expenses
-            .groupby("department")["amount"]
-            .sum()
-            .sort_values(ascending=False)
+        st.subheader(
+            "🏢 Expense by Department"
         )
 
-        st.bar_chart(department_expenses)
+        if not expenses.empty:
+
+            department_expenses = (
+                expenses
+                .groupby("department")[
+                    "amount"
+                ]
+                .sum()
+                .sort_values(
+                    ascending=False
+                )
+            )
+
+            st.bar_chart(
+                department_expenses,
+                use_container_width=True
+            )
+
+        else:
+
+            st.info(
+                "No expense data available."
+            )
 
     st.divider()
 
-    # ----------------------------------------------
-    # RECENT INVOICES
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # INVOICE OVERVIEW
+    # --------------------------------------------------
 
-    st.subheader("🧾 Invoice Overview")
-
-    invoice_display = invoices[
-        [
-            "invoice_number",
-            "vendor_name",
-            "invoice_date",
-            "due_date",
-            "amount",
-            "status"
-        ]
-    ].copy()
-
-    invoice_display["amount"] = (
-        invoice_display["amount"]
-        .apply(lambda x: f"₹{x:,.0f}")
+    st.subheader(
+        "🧾 Invoice Overview"
     )
 
-    st.dataframe(
-        invoice_display,
-        use_container_width=True,
-        hide_index=True
-    )
+    if invoices.empty:
+
+        st.info(
+            "No invoices found."
+        )
+
+    else:
+
+        invoice_display = invoices[
+            [
+                "invoice_number",
+                "vendor_name",
+                "invoice_date",
+                "due_date",
+                "amount",
+                "status"
+            ]
+        ].copy()
+
+        invoice_display["amount"] = (
+            invoice_display["amount"]
+            .apply(
+                lambda x:
+                f"₹{x:,.0f}"
+            )
+        )
+
+        st.dataframe(
+            invoice_display,
+            use_container_width=True,
+            hide_index=True
+        )
 
     st.divider()
 
-    # ----------------------------------------------
-    # BUDGET ANALYSIS
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # BUDGET VS ACTUAL
+    # --------------------------------------------------
 
-    st.subheader("📊 Budget vs Actual")
-
-    actual = (
-        expenses
-        .groupby("category")["amount"]
-        .sum()
-        .rename("Actual")
+    st.subheader(
+        "📊 Budget vs Actual"
     )
 
-    budget = (
-        budgets
-        .groupby("category")["budget_amount"]
-        .sum()
-        .rename("Budget")
-    )
+    if budgets.empty:
 
-    budget_analysis = pd.concat(
-        [budget, actual],
-        axis=1
-    ).fillna(0)
+        st.info(
+            "No budget data available."
+        )
 
-    budget_analysis["Utilization %"] = (
-        budget_analysis["Actual"]
-        / budget_analysis["Budget"]
-        * 100
-    )
+    else:
 
-    st.dataframe(
-        budget_analysis.style.format({
-            "Budget": "₹{:,.0f}",
-            "Actual": "₹{:,.0f}",
-            "Utilization %": "{:.1f}%"
-        }),
-        use_container_width=True
-    )
+        actual = (
+            expenses
+            .groupby("category")[
+                "amount"
+            ]
+            .sum()
+            .rename("Actual")
+        )
+
+        budget = (
+            budgets
+            .groupby("category")[
+                "budget_amount"
+            ]
+            .sum()
+            .rename("Budget")
+        )
+
+        budget_analysis = pd.concat(
+            [
+                budget,
+                actual
+            ],
+            axis=1
+        ).fillna(0)
+
+        budget_analysis[
+            "Utilization %"
+        ] = 0.0
+
+        valid_budget = (
+            budget_analysis[
+                "Budget"
+            ] > 0
+        )
+
+        budget_analysis.loc[
+            valid_budget,
+            "Utilization %"
+        ] = (
+            budget_analysis.loc[
+                valid_budget,
+                "Actual"
+            ]
+            /
+            budget_analysis.loc[
+                valid_budget,
+                "Budget"
+            ]
+            *
+            100
+        )
+
+        st.dataframe(
+            budget_analysis.style.format(
+                {
+                    "Budget":
+                        "₹{:,.0f}",
+                    "Actual":
+                        "₹{:,.0f}",
+                    "Utilization %":
+                        "{:.1f}%"
+                }
+            ),
+            use_container_width=True
+        )
