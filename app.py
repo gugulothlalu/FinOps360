@@ -26,8 +26,10 @@ def get_connection():
 # --------------------------------------------------
 # VISITOR ANALYTICS DATABASE
 # --------------------------------------------------
+
 def init_visitor_tracking():
     """Create visitor analytics table safely."""
+
     conn = get_connection()
 
     try:
@@ -56,7 +58,10 @@ def init_visitor_tracking():
 
 
 def track_current_session():
-    """Record one visit for each browser session."""
+    """
+    Create one browser session and keep updating
+    its last_seen time.
+    """
 
     if "finops_session_id" not in st.session_state:
 
@@ -64,13 +69,12 @@ def track_current_session():
             uuid.uuid4()
         )
 
-        now = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        now = datetime.now()
 
         conn = get_connection()
 
         try:
+
             conn.execute(
                 """
                 INSERT INTO app_visits
@@ -83,9 +87,9 @@ def track_current_session():
                 """,
                 (
                     st.session_state.finops_session_id,
-                    date.today().isoformat(),
-                    now,
-                ),
+                    now.strftime("%Y-%m-%d"),
+                    now.strftime("%Y-%m-%d %H:%M:%S")
+                )
             )
 
             conn.commit()
@@ -95,13 +99,12 @@ def track_current_session():
 
     else:
 
-        now = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        now = datetime.now()
 
         conn = get_connection()
 
         try:
+
             conn.execute(
                 """
                 UPDATE app_visits
@@ -109,9 +112,9 @@ def track_current_session():
                 WHERE session_id = ?
                 """,
                 (
-                    now,
-                    st.session_state.finops_session_id,
-                ),
+                    now.strftime("%Y-%m-%d %H:%M:%S"),
+                    st.session_state.finops_session_id
+                )
             )
 
             conn.commit()
@@ -136,7 +139,7 @@ def load_usage_analytics():
             FROM app_visits
             ORDER BY visit_date ASC
             """,
-            conn,
+            conn
         )
 
     finally:
@@ -146,208 +149,15 @@ def load_usage_analytics():
 # --------------------------------------------------
 # INITIALIZE VISITOR TRACKING
 # --------------------------------------------------
+
 init_visitor_tracking()
 track_current_session()
 
 
 # --------------------------------------------------
-# LOAD EXPENSES
-# --------------------------------------------------
-def load_expenses():
-
-    conn = get_connection()
-
-    try:
-
-        return pd.read_sql_query(
-            """
-            SELECT
-                expense_id,
-                expense_date,
-                category,
-                department,
-                amount,
-                description
-            FROM expenses
-            ORDER BY expense_date DESC
-            """,
-            conn,
-        )
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# LOAD INVOICES
-# --------------------------------------------------
-def load_invoices():
-
-    conn = get_connection()
-
-    try:
-
-        return pd.read_sql_query(
-            """
-            SELECT
-                invoices.invoice_id,
-                invoices.vendor_id,
-                vendors.vendor_name,
-                invoices.invoice_number,
-                invoices.invoice_date,
-                invoices.due_date,
-                invoices.amount,
-                invoices.status
-            FROM invoices
-            LEFT JOIN vendors
-            ON invoices.vendor_id = vendors.vendor_id
-            ORDER BY invoices.due_date ASC
-            """,
-            conn,
-        )
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# LOAD VENDORS
-# --------------------------------------------------
-def load_vendors():
-
-    conn = get_connection()
-
-    try:
-
-        return pd.read_sql_query(
-            """
-            SELECT
-                vendor_id,
-                vendor_name
-            FROM vendors
-            ORDER BY vendor_name
-            """,
-            conn,
-        )
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# LOAD BUDGETS
-# --------------------------------------------------
-def load_budgets():
-
-    conn = get_connection()
-
-    try:
-
-        return pd.read_sql_query(
-            """
-            SELECT
-                month,
-                category,
-                budget_amount
-            FROM budgets
-            """,
-            conn,
-        )
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# ADD EXPENSE
-# --------------------------------------------------
-def add_expense(
-    expense_date,
-    category,
-    department,
-    amount,
-    description,
-):
-
-    conn = get_connection()
-
-    try:
-
-        conn.execute(
-            """
-            INSERT INTO expenses
-            (
-                expense_date,
-                category,
-                department,
-                amount,
-                description
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                expense_date,
-                category,
-                department,
-                amount,
-                description,
-            ),
-        )
-
-        conn.commit()
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# ADD INVOICE
-# --------------------------------------------------
-def add_invoice(
-    vendor_id,
-    invoice_number,
-    invoice_date,
-    due_date,
-    amount,
-    status,
-):
-
-    conn = get_connection()
-
-    try:
-
-        conn.execute(
-            """
-            INSERT INTO invoices
-            (
-                vendor_id,
-                invoice_number,
-                invoice_date,
-                due_date,
-                amount,
-                status
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                vendor_id,
-                invoice_number,
-                invoice_date,
-                due_date,
-                amount,
-                status,
-            ),
-        )
-
-        conn.commit()
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
 # APP USAGE ANALYTICS
 # --------------------------------------------------
+
 def show_usage_analytics():
 
     st.subheader("📊 App Usage Analytics")
@@ -356,20 +166,28 @@ def show_usage_analytics():
 
     if visits.empty:
 
-        st.info(
-            "No app usage data recorded yet."
-        )
+        st.info("No visitor data available yet.")
 
         return
 
+    # Convert dates safely
     visits["visit_date"] = pd.to_datetime(
         visits["visit_date"],
         errors="coerce"
     )
 
-    # ----------------------------------------------
+    visits["last_seen"] = pd.to_datetime(
+        visits["last_seen"],
+        errors="coerce"
+    )
+
+    visits = visits.dropna(
+        subset=["visit_date"]
+    )
+
+    # --------------------------------------------------
     # BASIC METRICS
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     total_visits = len(visits)
 
@@ -377,30 +195,32 @@ def show_usage_analytics():
         "session_id"
     ].nunique()
 
+    today = pd.Timestamp(
+        date.today()
+    )
+
     today_visits = int(
         (
-            visits["visit_date"].dt.date
-            == date.today()
+            visits["visit_date"].dt.normalize()
+            == today
         ).sum()
     )
 
-    last_seen = pd.to_datetime(
-        visits["last_seen"],
-        errors="coerce"
-    )
-
-    cutoff = pd.Timestamp(
+    active_cutoff = pd.Timestamp(
         datetime.now()
         - timedelta(minutes=15)
     )
 
     active_sessions = int(
-        (last_seen >= cutoff).sum()
+        (
+            visits["last_seen"]
+            >= active_cutoff
+        ).sum()
     )
 
-    # ----------------------------------------------
+    # --------------------------------------------------
     # KPI CARDS
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -434,13 +254,13 @@ def show_usage_analytics():
 
     st.caption(
         "Visitor statistics are estimated from browser "
-        "sessions. Opening a new browser session is counted "
-        "as a new visit."
+        "sessions. A new browser session is counted as a "
+        "new visit."
     )
 
-    # ----------------------------------------------
-    # TREND GRAPH
-    # ----------------------------------------------
+    # --------------------------------------------------
+    # VISITOR TREND
+    # --------------------------------------------------
 
     st.markdown("### 📈 Visitor Trend")
 
@@ -451,31 +271,31 @@ def show_usage_analytics():
             "Yearly"
         ],
         horizontal=True,
-        key="usage_trend_view"
+        key="visitor_trend"
     )
 
-    # ==============================================
-    # MONTHLY
-    # ==============================================
+    # ==================================================
+    # MONTHLY GRAPH
+    # ==================================================
 
     if trend_view == "Monthly":
 
-        visits["month"] = (
-            visits["visit_date"]
-            .dt.to_period("M")
-        )
-
         monthly = (
             visits
+            .assign(
+                month=visits[
+                    "visit_date"
+                ].dt.to_period("M")
+            )
             .groupby("month")
             .size()
-            .rename("Visits")
+            .rename("Visitors")
         )
 
-        # Last 12 months
-        current_month = pd.Timestamp(
-            date.today()
-        ).to_period("M")
+        current_month = (
+            pd.Timestamp.today()
+            .to_period("M")
+        )
 
         start_month = (
             current_month - 11
@@ -492,9 +312,8 @@ def show_usage_analytics():
             fill_value=0
         )
 
-        monthly.index = (
-            monthly.index
-            .strftime("%b %Y")
+        monthly.index = monthly.index.strftime(
+            "%b %Y"
         )
 
         st.line_chart(
@@ -502,41 +321,30 @@ def show_usage_analytics():
             use_container_width=True
         )
 
-    # ==============================================
-    # YEARLY
-    # ==============================================
+    # ==================================================
+    # YEARLY GRAPH
+    # ==================================================
 
     else:
 
-        visits["year"] = (
-            visits["visit_date"]
-            .dt.year
-        )
-
         yearly = (
             visits
+            .assign(
+                year=visits[
+                    "visit_date"
+                ].dt.year
+            )
             .groupby("year")
             .size()
-            .rename("Visits")
-            .sort_index()
+            .rename("Visitors")
         )
 
         current_year = date.today().year
 
-        if len(yearly) > 0:
-
-            start_year = min(
-                int(yearly.index.min()),
-                current_year
-            )
-
-        else:
-
-            start_year = current_year
-
+        # Show current year + previous 4 years
         year_index = pd.Index(
             range(
-                start_year,
+                current_year - 4,
                 current_year + 1
             ),
             name="Year"
@@ -552,8 +360,45 @@ def show_usage_analytics():
             use_container_width=True
         )
 
-    st.divider()
+    # --------------------------------------------------
+    # DAILY VISITOR TREND
+    # --------------------------------------------------
 
+    st.markdown("### 📅 Recent Daily Visits")
+
+    daily = (
+        visits
+        .assign(
+            day=visits[
+                "visit_date"
+            ].dt.date
+        )
+        .groupby("day")
+        .size()
+        .rename("Visits")
+    )
+
+    last_30_days = pd.date_range(
+        end=pd.Timestamp.today(),
+        periods=30,
+        freq="D"
+    )
+
+    daily_index = pd.Index(
+        last_30_days.date
+    )
+
+    daily = daily.reindex(
+        daily_index,
+        fill_value=0
+    )
+
+    st.area_chart(
+        daily,
+        use_container_width=True
+    )
+
+    st.divider()
 
 # --------------------------------------------------
 # SIDEBAR
