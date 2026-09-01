@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import date
-from pathlib import Path
+import uuid
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -14,7 +14,75 @@ st.set_page_config(
     layout="wide"
 )
 
-DATABASE = Path(__file__).resolve().parent / "finops.db"
+DATABASE = "finops.db"
+
+
+# --------------------------------------------------
+# VISITOR ANALYTICS
+# --------------------------------------------------
+
+def init_visitor_tracking():
+    """Create the visitor tracking table if it does not exist."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_visits (
+            visit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            visit_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def track_visit():
+    """Record one visit per Streamlit session."""
+    if "finops_visit_recorded" not in st.session_state:
+        session_id = str(uuid.uuid4())
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO app_visits (session_id)
+            VALUES (?)
+            """,
+            (session_id,)
+        )
+
+        conn.commit()
+        conn.close()
+
+        st.session_state["finops_visit_recorded"] = True
+
+
+def get_visitor_stats():
+    """Return total visits and unique visitor sessions."""
+    conn = get_connection()
+
+    stats = pd.read_sql_query(
+        """
+        SELECT
+            COUNT(*) AS total_visits,
+            COUNT(DISTINCT session_id) AS unique_visitors
+        FROM app_visits
+        """,
+        conn
+    )
+
+    conn.close()
+
+    return int(stats.iloc[0]["total_visits"]), int(stats.iloc[0]["unique_visitors"])
+
+
+init_visitor_tracking()
+track_visit()
 
 
 # --------------------------------------------------
@@ -793,11 +861,8 @@ elif page == "📈 Reports":
     # KPI CALCULATIONS
     # ----------------------------------------------
 
-    # Expense KPIs respect the selected filters.
     total_expenses = filtered_expenses["amount"].sum()
 
-    # Invoices currently do not contain category/department fields, so
-    # invoice KPIs remain global rather than pretending to be filtered.
     pending_payments = invoices[
         invoices["status"] == "Pending"
     ]["amount"].sum()
@@ -806,17 +871,7 @@ elif page == "📈 Reports":
         invoices["status"] == "Paid"
     ]["amount"].sum()
 
-    # Budgets are category-level only. When a category is selected, use
-    # that category's budget; department selection cannot change budget
-    # scope because the budgets table has no department column.
-    budget_scope = budgets.copy()
-
-    if selected_category != "All":
-        budget_scope = budget_scope[
-            budget_scope["category"] == selected_category
-        ]
-
-    total_budget = budget_scope["budget_amount"].sum()
+    total_budget = budgets["budget_amount"].sum()
 
     budget_utilization = (
         total_expenses / total_budget * 100
@@ -840,13 +895,13 @@ elif page == "📈 Reports":
 
     with col2:
         st.metric(
-            "Pending Payments (All Invoices)",
+            "Pending Payments",
             f"₹{pending_payments:,.0f}"
         )
 
     with col3:
         st.metric(
-            "Paid Invoices (All Invoices)",
+            "Paid Invoices",
             f"₹{paid_invoices:,.0f}"
         )
 
@@ -854,11 +909,6 @@ elif page == "📈 Reports":
         st.metric(
             "Budget Utilization",
             f"{budget_utilization:.1f}%"
-        )
-
-    if selected_category != "All" or selected_department != "All":
-        st.caption(
-            "ℹ️ Expense analysis follows the selected filters. Invoice metrics remain global because invoices are not mapped to category/department; budget utilization uses the selected category's budget when a category is chosen."
         )
 
     # ----------------------------------------------
@@ -1149,6 +1199,26 @@ else:
     st.caption(
         "Finance & Operations Analytics Dashboard"
     )
+
+    # ----------------------------------------------
+    # VISITOR ANALYTICS
+    # ----------------------------------------------
+
+    with st.expander("📊 App Usage Analytics"):
+        total_visits, unique_visitors = get_visitor_stats()
+
+        analytics_col1, analytics_col2 = st.columns(2)
+
+        with analytics_col1:
+            st.metric("👀 Total Visits", total_visits)
+
+        with analytics_col2:
+            st.metric("👤 Unique Sessions", unique_visitors)
+
+        st.caption(
+            "Counts app sessions recorded by FinOps360. "
+            "A new browser session is counted as a new visitor session."
+        )
 
     st.divider()
 
